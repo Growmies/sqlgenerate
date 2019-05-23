@@ -1,6 +1,6 @@
 // Needed to allow its use in older versions of Node and Browsers.
-import 'babel-polyfill';
-import {map, join, head, compose, curry, toUpper, prop, equals, isEmpty, F, isArrayLike, concat, __, pluck, contains} from 'ramda';
+const _ = require('lodash');
+const {map, join, head, compose, curry, toUpper, prop, equals, isEmpty, F, isArrayLike, concat, __, pluck, contains} = require('ramda');
 
 const INDENT = '\t';
 const LINE_END = '\n';
@@ -64,8 +64,12 @@ var Generator = {
                 str.push(`${results}${LINE_END}`);
             }
             if (n.from) {
-                const from = recurser(n.from);
-                str.push(`${INDENT}FROM (${from})${LINE_END}`);
+              const from = recurser(n.from);
+              if (containsSelect(from)) {
+                str.push(`${INDENT}FROM (${from}) ${_.uniqueId('subquery_')}${LINE_END}`);
+              } else {
+                str.push(`${INDENT}FROM ${from}${LINE_END}`);
+              }
             }
             if (n.where) {
                 const where = recurser(head(n.where));
@@ -258,19 +262,19 @@ var Generator = {
         table : (n) => {
             const alias =  (n.alias)  ? `AS ${n.alias}` : '';
             const index = (n.index) ? recurse(Generator)(n.index) : '';
-            return `\`${n.name}\` ${alias} ${index}`;
+            return `"${n.name}" ${alias} ${index}`;
         },
         index : (n) => `INDEXED BY ${n.name}`,
         column : (n) => {
             const recurser = recurse(Generator);
-            const alias =  (n.alias) ? `AS \`${n.alias}\`` : '';
+            const alias =  (n.alias) ? `AS "${n.alias}"` : '';
             const index = (n.index) ? recurser(n.index) : '';
-            return `\`${n.name}\` ${alias} ${index}`;
+            return `"${n.name}" ${alias} ${index}`;
         },
         'function' : (n) => n.name,
         expression : (n) => {
             const m = mapr(Generator);
-            return `\`${n.name}\`(${m(n.columns)})`;
+            return `"${n.name}"(${m(n.columns)})`;
         },
         view : (n) => n.name,
         savepoint : (n) => n.name,
@@ -289,7 +293,7 @@ var Generator = {
             if(isUnaryOperation(n)){
                 const expression = recurser(n.expression);
                 const operator = (n.operator) ? `${n.operator}` : '';
-                const alias = (n.alias) ? `AS [${n.alias}]` : '';
+                const alias = (n.alias) ? `AS "${n.alias}"` : '';
                 return `${operator} ${expression} ${alias}`;
             }
             
@@ -326,7 +330,7 @@ var Generator = {
             const recurser = recurse(Generator);
             const expression = recurser(n.expression);
             const as = recurser(n.as);
-            const alias = (n.alias) ? `AS [${n.alias}]` : '';
+            const alias = (n.alias) ? `AS "${n.alias}"` : '';
             return `CAST(${expression} AS ${as})${alias}`;
         },
         common : (n) => {
@@ -340,7 +344,7 @@ var Generator = {
             const mapConditions = compose(join(LINE_END), mapr(Generator));
             const discriminant = (n.discriminant) ? recurser(n.discriminant) : '';
             const conditions = mapConditions(n.expression);
-            const alias = (n.alias) ? `AS [${n.alias}]` : '';
+            const alias = (n.alias) ? `AS "${n.alias}"` : '';
             return `CASE ${discriminant} ${conditions} END ${alias}`;
         },
         recursive : (n) => {
@@ -373,13 +377,13 @@ var Generator = {
         const recurser = recurse(Generator);
         const name = toUpper(recurser(n.name));
         const args = recurser(n.args);
-        const alias =  (n.alias)  ? `AS \`${n.alias}\`` : '';
+        const alias =  (n.alias)  ? `AS "${n.alias}"` : '';
         return `${name}(${args}) ${alias}`;
     },  
     module : (n) => {
         const recurser = recurse(Generator);
         const args = recurser(n.args);
-        const alias =  (n.alias)  ? `AS \`${n.alias}\`` : '';
+        const alias =  (n.alias)  ? `AS "${n.alias}"` : '';
         return `${n.name}(${args}) ${alias}`;
     }, 
     event : ({event, occurs, of}) => {
